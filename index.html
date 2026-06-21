@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0420">
+<title>VOID HOPPER</title>
+<style>
+  :root{
+    --cyan:#00e5ff;
+    --pink:#ff2d95;
+    --bg0:#0b0420;
+    --bg1:#1a0a3a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;overflow:hidden;background:#000;}
+  body{
+    font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;
+    color:#fff;
+    user-select:none;-webkit-user-select:none;
+    touch-action:none;
+  }
+  #game{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;}
+  canvas{display:block;touch-action:none;}
+
+  /* ---------- overlay screens ---------- */
+  .screen{
+    position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:24px;gap:14px;
+    background:radial-gradient(120% 90% at 50% 25%, #20103f 0%, #0b0420 70%);
+    z-index:10;
+  }
+  .hidden{display:none!important;}
+
+  .logo{
+    font-size:clamp(38px,11.5vw,80px);font-weight:900;letter-spacing:0px;line-height:.9;
+    color:#fff;
+    text-shadow:0 0 18px var(--cyan),0 0 40px rgba(0,229,255,.5);
+  }
+  .logo .sub{display:block;font-size:.36em;letter-spacing:6px;color:var(--pink);
+    text-shadow:0 0 14px var(--pink);margin-top:10px;}
+  .tag{color:#a99bd0;font-size:14px;max-width:290px;line-height:1.55;}
+
+  .btn{
+    appearance:none;border:0;cursor:pointer;
+    font-family:inherit;font-weight:800;letter-spacing:1.5px;
+    font-size:18px;color:#04121a;
+    background:linear-gradient(180deg,#9bf3ff,var(--cyan));
+    padding:15px 30px;border-radius:16px;min-width:220px;
+    box-shadow:0 6px 0 #008ba3,0 10px 24px rgba(0,229,255,.35);
+    transition:transform .06s ease, box-shadow .06s ease;
+  }
+  .btn:active{transform:translateY(4px);box-shadow:0 2px 0 #008ba3,0 6px 14px rgba(0,229,255,.3);}
+  .btn.pink{
+    color:#1a0218;background:linear-gradient(180deg,#ff9dca,var(--pink));
+    box-shadow:0 6px 0 #a30056,0 10px 24px rgba(255,45,149,.35);
+  }
+  .btn.pink:active{box-shadow:0 2px 0 #a30056,0 6px 14px rgba(255,45,149,.3);}
+  .btn.ghost{
+    color:#cfefff;background:transparent;border:2px solid rgba(0,229,255,.5);
+    box-shadow:none;min-width:160px;font-size:15px;padding:12px 22px;
+  }
+  .btn.ghost:active{transform:translateY(2px);}
+  .row{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;}
+
+  .best{color:#ffd76a;font-weight:800;letter-spacing:1px;
+    text-shadow:0 0 12px rgba(255,200,80,.4);}
+
+  /* ---------- level select ---------- */
+  .lsTitle{font-size:26px;font-weight:900;letter-spacing:3px;text-shadow:0 0 14px var(--cyan);}
+  .grid{display:grid;grid-template-columns:repeat(5,56px);gap:8px;width:fit-content;margin:0 auto;justify-content:center;}
+  .lv{
+    aspect-ratio:1;min-width:0;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-weight:900;font-size:20px;cursor:pointer;position:relative;
+    background:linear-gradient(180deg,#2a1850,#190b34);
+    border:2px solid rgba(0,229,255,.35);color:#fff;
+    box-shadow:0 4px 0 rgba(0,0,0,.35);
+  }
+  .lv .lbl{font-size:9px;letter-spacing:1px;color:#9d8fc4;margin-top:2px;font-weight:700;}
+  .lv.boss{border-color:rgba(255,45,149,.6);background:linear-gradient(180deg,#46123a,#260a26);}
+  .lv.boss .lbl{color:var(--pink);}
+  .lv.cleared{border-color:#ffd76a;}
+  .lv.cleared::after{content:"★";position:absolute;top:4px;right:7px;color:#ffd76a;font-size:11px;
+    text-shadow:0 0 8px rgba(255,200,80,.7);}
+  .lv.locked{opacity:.4;cursor:not-allowed;}
+  .lv.locked .num{display:none;}
+  .lv.locked::before{content:"🔒";font-size:20px;}
+  .lv:active:not(.locked){transform:translateY(2px);}
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;top:0;left:0;right:0;z-index:5;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    padding:14px 16px;pointer-events:none;
+    font-weight:800;letter-spacing:1px;
+  }
+  #hud .pill{background:rgba(10,4,30,.55);backdrop-filter:blur(4px);
+    border:1px solid rgba(0,229,255,.3);border-radius:12px;padding:7px 12px;font-size:13px;}
+  #hud .big{font-size:22px;color:var(--cyan);text-shadow:0 0 10px rgba(0,229,255,.5);}
+  #pauseBtn{pointer-events:auto;cursor:pointer;}
+  #hint{position:fixed;left:0;right:0;bottom:8%;text-align:center;z-index:5;
+    color:#cfd0ff;font-size:14px;letter-spacing:1px;pointer-events:none;
+    text-shadow:0 0 10px rgba(0,0,0,.8);transition:opacity .5s;}
+
+  .resultBig{font-size:clamp(30px,10vw,58px);font-weight:900;letter-spacing:2px;}
+  .win{color:#fff;text-shadow:0 0 20px var(--cyan),0 0 44px rgba(0,229,255,.6);}
+  .lose{color:#fff;text-shadow:0 0 20px var(--pink),0 0 44px rgba(255,45,149,.5);}
+  .stats{color:#bcaedf;font-size:16px;line-height:1.7;}
+  .stats b{color:#fff;}
+  .newbest{color:#ffd76a;font-weight:900;letter-spacing:2px;
+    text-shadow:0 0 14px rgba(255,200,80,.6);animation:pulse 1s infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+</style>
+</head>
+<body>
+<div id="game"><canvas id="c"></canvas></div>
+
+<!-- HOME -->
+<div id="home" class="screen">
+  <div class="logo">VOID<br>HOPPER<span class="sub">SWIPE TO LEAP</span></div>
+  <div class="tag">Swipe <b>up · left · right</b> to hop the ball across the tiles. Miss one, fall into the void.</div>
+  <button class="btn" onclick="UI.levels()">PLAY</button>
+  <button class="btn pink" onclick="Game.start('endless')">ENDLESS</button>
+  <div class="best" id="homeBest"></div>
+</div>
+
+<!-- LEVEL SELECT -->
+<div id="levels" class="screen hidden">
+  <div class="lsTitle">SELECT LEVEL</div>
+  <div class="grid" id="lvGrid"></div>
+  <button class="btn ghost" onclick="UI.home()">◀ BACK</button>
+</div>
+
+<!-- RESULT -->
+<div id="result" class="screen hidden">
+  <div class="resultBig" id="resultTitle">LEVEL COMPLETE</div>
+  <div class="stats" id="resultStats"></div>
+  <div class="newbest hidden" id="newBest">★ NEW BEST ★</div>
+  <div class="row" id="resultBtns"></div>
+</div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div class="pill" id="hudLeft">LV 1</div>
+  <div class="pill big" id="hudMid">0</div>
+  <div class="pill" id="pauseBtn" onclick="Game.togglePause()">❚❚</div>
+</div>
+<div id="hint" class="hidden">swipe ↑ ← → to hop</div>
+
+<script>
+//=================================================================
+//  VOID HOPPER  —  single-file mobile tile-hopping game
+//=================================================================
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const COLS = 5;
+let W=0, H=0, DPR=1, cell=0, offsetX=0;
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2.5);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.style.width = W+'px'; canvas.style.height = H+'px';
+  canvas.width = Math.floor(W*DPR); canvas.height = Math.floor(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  cell = Math.min(Math.floor(W/(COLS+0.6)), Math.floor(H/8.2));
+  offsetX = (W - cell*COLS)/2;
+}
+window.addEventListener('resize', resize);
+resize();
+
+//----------------------------------------------------------------
+//  Persistence
+//----------------------------------------------------------------
+const SAVE_KEY = 'voidhopper_v1';
+const Save = {
+  data:{ cleared:Array(10).fill(false), levelBest:Array(10).fill(0), endlessBest:0 },
+  load(){ try{ const s=JSON.parse(localStorage.getItem(SAVE_KEY)); if(s) Object.assign(this.data,s); }catch(e){} },
+  flush(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(this.data)); }catch(e){} }
+};
+Save.load();
+
+//----------------------------------------------------------------
+//  Level configs (1..10). idx 4 & 9 = boss.
+//----------------------------------------------------------------
+const LEVELS = [
+  {goal:25, density:.58, hazSpeed:0,   hazDelay:0,  boss:0},
+  {goal:30, density:.48, hazSpeed:0,   hazDelay:0,  boss:0},
+  {goal:35, density:.42, hazSpeed:.55, hazDelay:3.5,boss:0},
+  {goal:40, density:.35, hazSpeed:.85, hazDelay:3,  boss:0},
+  {goal:35, density:.36, hazSpeed:1.1, hazDelay:2,  boss:1},  // BOSS
+  {goal:45, density:.31, hazSpeed:1.05,hazDelay:2.5,boss:0},
+  {goal:50, density:.27, hazSpeed:1.25,hazDelay:2,  boss:0},
+  {goal:55, density:.24, hazSpeed:1.45,hazDelay:2,  boss:0},
+  {goal:60, density:.21, hazSpeed:1.65,hazDelay:1.5,boss:0},
+  {goal:50, density:.23, hazSpeed:1.9, hazDelay:1.5,boss:2},  // BOSS
+];
+
+//----------------------------------------------------------------
+//  small helpers
+//----------------------------------------------------------------
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const pick=arr=>arr[(Math.random()*arr.length)|0];
+const easeOut=t=>1-Math.pow(1-t,3);
+
+//----------------------------------------------------------------
+//  Tile field generator
+//----------------------------------------------------------------
+function emptyRow(){ return [false,false,false,false,false]; }
+function solidAt(rows,r,c){ return c>=0&&c<COLS&&rows[r]&&rows[r][c]; }
+
+// guarantee no solid tile is a forward dead-end
+function repair(rows, from, to){
+  for(let r=from;r<to;r++){
+    if(!rows[r]||!rows[r+1]) continue;
+    for(let c=0;c<COLS;c++){
+      if(!rows[r][c]) continue;
+      if(!(solidAt(rows,r+1,c-1)||solidAt(rows,r+1,c)||solidAt(rows,r+1,c+1))){
+        rows[r+1][c]=true; // straight-ahead is always within reach
+      }
+    }
+  }
+}
+
+// build/extend the path. keeps state on the field object.
+function genChunk(field, count){
+  const cfg = field.cfg;
+  const start = field.rows.length;
+  for(let i=0;i<count;i++){
+    const r = field.rows.length;
+    const row = emptyRow();
+    if(r===0){ row[2]=true; field.pathCol=2; }
+    else{
+      // density may scale up over distance in endless
+      let dens = cfg.density;
+      if(field.endless) dens = clamp(0.5 - r*0.0016, 0.16, 0.5);
+      field.pathCol = clamp(field.pathCol + pick([-1,0,1,0]), 0, COLS-1);
+      row[field.pathCol]=true;
+      for(let c=0;c<COLS;c++){
+        if(c!==field.pathCol && Math.random()<dens) row[c]=true;
+      }
+    }
+    field.rows.push(row);
+  }
+  repair(field.rows, Math.max(0,start-1), field.rows.length-1);
+}
+
+function makeField(cfg, endless){
+  const field = { rows:[], pathCol:2, cfg, endless };
+  genChunk(field, endless ? 60 : cfg.goal+8);
+  return field;
+}
+
+//----------------------------------------------------------------
+//  Particles
+//----------------------------------------------------------------
+let particles=[];
+function burst(x,y,color,n,spd){
+  for(let i=0;i<n;i++){
+    const a=rnd(0,Math.PI*2), s=rnd(spd*.3,spd);
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-spd*.3,
+      life:1,col:color,r:rnd(2,4.5)});
+  }
+}
+function updateParticles(dt){
+  for(const p of particles){
+    p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=900*dt; p.life-=dt*1.6;
+  }
+  particles=particles.filter(p=>p.life>0);
+}
+
+//----------------------------------------------------------------
+//  Game
+//----------------------------------------------------------------
+const Game = {
+  mode:'menu',          // menu | play | dead | won | paused
+  field:null, cfg:null, levelIdx:-1, endless:false,
+  ball:{col:2,row:0},
+  camRow:0,
+  anim:null,            // hop animation {fromC,fromR,toC,toR,t,fall}
+  hazardRow:-8, hazardOn:false, time:0,
+  shake:0, removed:new Set(), falling:[],
+  boss:null, hintShown:false,
+  best:0, distance:0,
+
+  start(which, idx){
+    particles=[]; this.falling=[]; this.removed=new Set();
+    this.shake=0; this.time=0; this.hazardRow=-8; this.hazardOn=false;
+    this.camRow=0; this.anim=null;
+    this.ball={col:2,row:0};
+
+    if(which==='endless'){
+      this.endless=true; this.levelIdx=-1;
+      this.cfg={goal:Infinity, density:.5, hazSpeed:1.0, hazDelay:5, boss:0};
+      this.best=Save.data.endlessBest;
+    }else{
+      this.endless=false; this.levelIdx=idx;
+      this.cfg=LEVELS[idx];
+      this.best=Save.data.levelBest[idx];
+    }
+    this.field = makeField(this.cfg, this.endless);
+    this.boss = this.cfg.boss ? {
+      strength:this.cfg.boss, timer:3.2, phase:'idle', cols:[], tele:0
+    } : null;
+
+    UI.toGame();
+    this.mode='play';
+    this.distance=0;
+    this.updateHud();
+    // hint
+    const hint=document.getElementById('hint');
+    if(!Save.data.cleared[0] || this.endless){
+      hint.classList.remove('hidden'); hint.style.opacity=1;
+      clearTimeout(this._hintT);
+      this._hintT=setTimeout(()=>{hint.style.opacity=0;},3200);
+    }else hint.classList.add('hidden');
+  },
+
+  hop(dc){
+    if(this.mode!=='play' || this.anim) return;
+    const b=this.ball;
+    const toC=b.col+dc, toR=b.row+1;
+    // ensure rows generated ahead
+    while(this.field.rows.length < toR+12) genChunk(this.field, 24);
+    this.anim={fromC:b.col,fromR:b.row,toC,toR,t:0,fall:false};
+    // hide hint after first move
+    const hint=document.getElementById('hint'); hint.style.opacity=0;
+  },
+
+  land(){
+    const a=this.anim;
+    const onTile = a.toC>=0 && a.toC<COLS && solidAt(this.field.rows,a.toR,a.toC);
+    // crumble the tile we left
+    this.removed.add(a.fromR+','+a.fromC);
+    this.falling.push({col:a.fromC,row:a.fromR,t:0});
+    this.ball.col=a.toC; this.ball.row=a.toR;
+
+    if(!onTile){ this.die('fall'); return; }
+
+    this.distance=this.ball.row;
+    burst(colX(a.toC), rowY(a.toR), '#00e5ff', 10, 420);
+    this.shake=Math.min(this.shake+3,6);
+    this.updateHud();
+
+    if(!this.endless && this.ball.row>=this.cfg.goal){ this.win(); return; }
+    this.anim=null;
+  },
+
+  die(reason){
+    if(this.mode==='dead') return;
+    this.mode='dead';
+    this.shake=14;
+    burst(colX(this.ball.col), rowY(this.ball.row), '#ff2d95', 26, 520);
+    // save endless best
+    let nb=false;
+    if(this.endless){
+      if(this.distance>Save.data.endlessBest){ Save.data.endlessBest=this.distance; Save.flush(); nb=true; }
+    }else{
+      if(this.distance>Save.data.levelBest[this.levelIdx]){ Save.data.levelBest[this.levelIdx]=this.distance; Save.flush(); }
+    }
+    if(reason==='fall'){ this.anim.fall=true; this.anim.t=0; }
+    setTimeout(()=>UI.result(false,nb), reason==='fall'?720:520);
+  },
+
+  win(){
+    this.mode='won';
+    this.anim=null;
+    let nb=false;
+    if(!Save.data.cleared[this.levelIdx]){ Save.data.cleared[this.levelIdx]=true; nb=true; }
+    if(this.distance>Save.data.levelBest[this.levelIdx]) Save.data.levelBest[this.levelIdx]=this.distance;
+    Save.flush();
+    burst(colX(this.ball.col), rowY(this.ball.row), '#ffd76a', 40, 560);
+    this.shake=8;
+    setTimeout(()=>UI.result(true,nb), 700);
+  },
+
+  togglePause(){
+    if(this.mode==='play'){ this.mode='paused'; UI.result(null); }
+    else if(this.mode==='paused'){ UI.toGame(); this.mode='play'; }
+  },
+
+  //-- boss behaviour --
+  updateBoss(dt){
+    const boss=this.boss; if(!boss) return;
+    boss.timer-=dt;
+    if(boss.phase==='idle' && boss.timer<=0){
+      // choose columns to smash
+      const n = boss.strength>=2 ? 2 : 1;
+      boss.cols=[];
+      while(boss.cols.length<n){ const c=(Math.random()*COLS)|0; if(!boss.cols.includes(c)) boss.cols.push(c); }
+      boss.phase='tele'; boss.tele=0.85; boss.timer=0;
+    } else if(boss.phase==='tele'){
+      boss.tele-=dt;
+      if(boss.tele<=0){
+        // SMASH: destroy tiles ahead in those columns, then repair fairness
+        const r0=this.ball.row+2, r1=this.ball.row+7;
+        for(const c of boss.cols){
+          for(let r=r0;r<=r1;r++){ if(this.field.rows[r]){ this.field.rows[r][c]=false; this.removed.add(r+','+c);} }
+        }
+        repair(this.field.rows, Math.max(0,this.ball.row), r1+1);
+        this.shake=Math.max(this.shake,11);
+        for(const c of boss.cols) burst(colX(c), rowY(r0), '#ff2d95', 16, 480);
+        boss.phase='idle';
+        boss.timer = boss.strength>=2 ? 2.0 : 2.6;
+      }
+    }
+  },
+
+  update(dt){
+    if(this.mode==='paused') return;
+    this.time+=dt;
+    updateParticles(dt);
+    for(const f of this.falling){ f.t+=dt; }
+    this.falling=this.falling.filter(f=>f.t<1);
+    if(this.shake>0) this.shake=Math.max(0,this.shake-dt*30);
+
+    // hop animation
+    if(this.anim){
+      const spd = this.anim.fall?2.2:6.5;
+      this.anim.t += dt*spd;
+      if(!this.anim.fall && this.anim.t>=1){ this.anim.t=1; this.land(); }
+    }
+
+    // camera follow
+    const vr = this.anim ? lerp(this.anim.fromR,this.anim.toR,easeOut(Math.min(this.anim.t,1))) : this.ball.row;
+    this.camRow += (vr - this.camRow)*Math.min(1,dt*8);
+
+    if(this.mode!=='play') return;
+
+    // hazard (the rising void)
+    if(this.cfg.hazSpeed>0){
+      if(!this.hazardOn && this.time>this.cfg.hazDelay){ this.hazardOn=true; this.hazardRow=this.ball.row-6; }
+      if(this.hazardOn){
+        let sp=this.cfg.hazSpeed;
+        if(this.endless) sp = 0.8 + this.distance*0.012;
+        this.hazardRow += sp*dt;
+        if(this.hazardRow >= this.ball.row - 0.15 && !this.anim){ this.die('void'); }
+        else if(this.hazardRow >= this.ball.row + 0.6){ this.die('void'); }
+      }
+    }
+
+    if(this.boss) this.updateBoss(dt);
+  },
+
+  updateHud(){
+    const left=document.getElementById('hudLeft');
+    const mid=document.getElementById('hudMid');
+    if(this.endless){
+      left.textContent='ENDLESS';
+      mid.textContent=this.distance;
+    }else{
+      left.innerHTML = (this.cfg.boss?'👑 ':'')+'LV '+(this.levelIdx+1);
+      mid.textContent=this.distance+' / '+this.cfg.goal;
+    }
+  }
+};
+
+//-- screen mapping helpers (depend on camRow) --
+function colX(c){ return offsetX + c*cell + cell/2; }
+function rowY(r){ return H*0.70 - (r - Game.camRow)*cell*0.92; }
+
+//----------------------------------------------------------------
+//  Rendering
+//----------------------------------------------------------------
+let stars=[];
+function initStars(){ stars=[]; for(let i=0;i<60;i++) stars.push({x:Math.random(),y:Math.random(),r:rnd(.5,1.8),tw:rnd(0,6)}); }
+initStars();
+
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+function drawTile(c,r,alpha){
+  const s=cell*0.84, x=colX(c)-s/2, y=rowY(r)-s/2;
+  ctx.save();
+  ctx.globalAlpha=alpha;
+  // glow
+  ctx.shadowColor='rgba(0,229,255,.55)'; ctx.shadowBlur=14;
+  const g=ctx.createLinearGradient(0,y,0,y+s);
+  g.addColorStop(0,'#1b6e86'); g.addColorStop(.5,'#0d3f52'); g.addColorStop(1,'#06222e');
+  ctx.fillStyle=g; roundRect(x,y,s,s,10); ctx.fill();
+  ctx.shadowBlur=0;
+  // top face highlight
+  ctx.fillStyle='rgba(120,240,255,.22)'; roundRect(x+3,y+3,s-6,s*0.32,7); ctx.fill();
+  ctx.strokeStyle='rgba(120,240,255,.85)'; ctx.lineWidth=2; roundRect(x+1,y+1,s-2,s-2,10); ctx.stroke();
+  ctx.restore();
+}
+
+function drawBall(){
+  let x, y, scaleY=1;
+  const a=Game.anim;
+  if(a){
+    const t=Math.min(a.t,1);
+    x=lerp(colX(a.fromC),colX(a.toC),t);
+    if(a.fall){
+      y=rowY(a.fromR) + easeOut(Math.min(a.t,2))*H*0.9;
+      scaleY=1;
+    }else{
+      const yr=lerp(a.fromR,a.toR,easeOut(t));
+      y=rowY(yr) - Math.sin(Math.PI*t)*cell*0.75;
+      scaleY = 1 - Math.sin(Math.PI*t)*0.12;
+    }
+  }else{
+    x=colX(Game.ball.col); y=rowY(Game.ball.row);
+  }
+  y -= cell*0.30; // sit on top of tile
+  const rad=cell*0.26;
+  // shadow on tile
+  if(!a || !a.fall){
+    ctx.save(); ctx.globalAlpha=.3; ctx.fillStyle='#000';
+    ctx.beginPath(); ctx.ellipse(x, rowY(a?lerp(a.fromR,a.toR,easeOut(Math.min(a.t,1))):Game.ball.row)-cell*0.06, rad*0.9, rad*0.4,0,0,7); ctx.fill(); ctx.restore();
+  }
+  ctx.save();
+  ctx.shadowColor='rgba(255,255,255,.9)'; ctx.shadowBlur=22;
+  const g=ctx.createRadialGradient(x-rad*.3,y-rad*.4,rad*.2,x,y,rad);
+  g.addColorStop(0,'#ffffff'); g.addColorStop(.7,'#eaf6ff'); g.addColorStop(1,'#9fd0e6');
+  ctx.fillStyle=g;
+  ctx.beginPath(); ctx.ellipse(x,y,rad,rad*scaleY,0,0,7); ctx.fill();
+  ctx.restore();
+}
+
+function drawBoss(){
+  const boss=Game.boss; if(!boss) return;
+  const by = rowY(Game.endless?0:Game.cfg.goal) ; // boss sits at goal row
+  if(by > H*0.6) return; // only when on screen near top
+  const cx=W/2, sz=cell*1.5;
+  ctx.save();
+  // telegraph columns
+  if(boss.phase==='tele'){
+    const a=0.25+0.35*Math.abs(Math.sin(Game.time*18));
+    for(const c of boss.cols){
+      ctx.fillStyle='rgba(255,45,149,'+a+')';
+      ctx.fillRect(colX(c)-cell*0.42, 0, cell*0.84, H);
+    }
+  }
+  // body
+  ctx.translate(cx, Math.max(by, cell*0.9));
+  ctx.shadowColor='rgba(255,45,149,.8)'; ctx.shadowBlur=30;
+  ctx.fillStyle='#2a0a26';
+  ctx.beginPath();
+  ctx.moveTo(0,-sz*0.6); ctx.lineTo(sz*0.7,0); ctx.lineTo(0,sz*0.55); ctx.lineTo(-sz*0.7,0); ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle='#ff2d95'; ctx.lineWidth=3; ctx.stroke();
+  // eye
+  ctx.shadowBlur=18; ctx.fillStyle = boss.phase==='tele'?'#fff':'#ff2d95';
+  ctx.beginPath(); ctx.ellipse(0,0,sz*0.18,sz*0.28,0,0,7); ctx.fill();
+  ctx.restore();
+}
+
+function render(){
+  // bg
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#1a0a3a'); g.addColorStop(1,'#0b0420');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // stars
+  for(const s of stars){
+    const a=0.3+0.5*Math.abs(Math.sin(Game.time*1.5+s.tw));
+    ctx.fillStyle='rgba(180,200,255,'+a+')';
+    ctx.beginPath(); ctx.arc(s.x*W,s.y*H,s.r,0,7); ctx.fill();
+  }
+
+  ctx.save();
+  if(Game.shake>0){ ctx.translate(rnd(-Game.shake,Game.shake), rnd(-Game.shake,Game.shake)); }
+
+  // visible rows
+  const f=Game.field; if(f){
+    const top=Math.ceil(Game.camRow + H/cell + 2);
+    const bot=Math.floor(Game.camRow - 2);
+    for(let r=Math.max(0,bot); r<=top; r++){
+      const row=f.rows[r]; if(!row) continue;
+      for(let c=0;c<COLS;c++){
+        if(!row[c]) continue;
+        if(Game.removed.has(r+','+c)) continue;
+        let alpha=1;
+        if(r < Game.ball.row) alpha=0.55;
+        drawTile(c,r,alpha);
+      }
+    }
+  }
+
+  // falling (crumbling) tiles
+  for(const fl of Game.falling){
+    const s=cell*0.84*(1-fl.t*0.5);
+    const x=colX(fl.col)-s/2, y=rowY(fl.row)-s/2 + fl.t*fl.t*H*0.5;
+    ctx.save(); ctx.globalAlpha=(1-fl.t)*0.7;
+    ctx.fillStyle='#0d3f52'; roundRect(x,y,s,s,8); ctx.fill();
+    ctx.restore();
+  }
+
+  drawBoss();
+  drawBall();
+
+  // particles
+  for(const p of particles){
+    ctx.save(); ctx.globalAlpha=Math.max(0,p.life);
+    ctx.fillStyle=p.col; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill(); ctx.restore();
+  }
+
+  // hazard void
+  if(Game.hazardOn){
+    const hy=rowY(Game.hazardRow);
+    const grd=ctx.createLinearGradient(0,hy-cell*2,0,H);
+    grd.addColorStop(0,'rgba(255,31,107,0)');
+    grd.addColorStop(.25,'rgba(140,10,60,.55)');
+    grd.addColorStop(1,'rgba(20,0,10,.96)');
+    ctx.fillStyle=grd; ctx.fillRect(0,hy-cell*2,W,H-(hy-cell*2));
+    // wobbly edge
+    ctx.strokeStyle='rgba(255,80,140,.9)'; ctx.lineWidth=3; ctx.beginPath();
+    for(let x=0;x<=W;x+=12){
+      const yy=hy + Math.sin(x*0.05+Game.time*5)*6;
+      x===0?ctx.moveTo(x,yy):ctx.lineTo(x,yy);
+    }
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+//----------------------------------------------------------------
+//  Main loop
+//----------------------------------------------------------------
+let last=performance.now();
+function loop(now){
+  let dt=(now-last)/1000; last=now;
+  if(dt>0.05) dt=0.05;
+  if(Game.mode!=='menu') Game.update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+//----------------------------------------------------------------
+//  Input — swipe + keyboard
+//----------------------------------------------------------------
+let touchStart=null;
+canvas.addEventListener('touchstart',e=>{
+  const t=e.changedTouches[0]; touchStart={x:t.clientX,y:t.clientY};
+},{passive:false});
+canvas.addEventListener('touchmove',e=>{e.preventDefault();},{passive:false});
+canvas.addEventListener('touchend',e=>{
+  if(!touchStart) return;
+  const t=e.changedTouches[0];
+  handleSwipe(t.clientX-touchStart.x, t.clientY-touchStart.y);
+  touchStart=null;
+},{passive:false});
+// mouse for desktop testing
+let mouseStart=null;
+canvas.addEventListener('mousedown',e=>{mouseStart={x:e.clientX,y:e.clientY};});
+canvas.addEventListener('mouseup',e=>{ if(mouseStart){handleSwipe(e.clientX-mouseStart.x,e.clientY-mouseStart.y);mouseStart=null;} });
+
+function handleSwipe(dx,dy){
+  if(Game.mode!=='play') return;
+  const ax=Math.abs(dx), ay=Math.abs(dy);
+  if(ax<24 && ay<24){ Game.hop(0); return; } // tap = straight hop
+  if(ay>=ax){ if(dy<0) Game.hop(0); } // up
+  else { Game.hop(dx<0?-1:1); }       // left / right
+}
+window.addEventListener('keydown',e=>{
+  if(Game.mode==='play'){
+    if(e.key==='ArrowUp'||e.key===' '){e.preventDefault();Game.hop(0);}
+    else if(e.key==='ArrowLeft')Game.hop(-1);
+    else if(e.key==='ArrowRight')Game.hop(1);
+  }
+  if(e.key==='Escape' && (Game.mode==='play'||Game.mode==='paused')) Game.togglePause();
+});
+
+//----------------------------------------------------------------
+//  UI / screens
+//----------------------------------------------------------------
+const UI = {
+  show(id){ for(const s of ['home','levels','result']) document.getElementById(s).classList.add('hidden');
+    if(id) document.getElementById(id).classList.remove('hidden'); },
+  hideHud(){ document.getElementById('hud').classList.add('hidden'); document.getElementById('hint').classList.add('hidden'); },
+  home(){
+    Game.mode='menu'; this.hideHud(); this.show('home');
+    const b=Save.data.endlessBest;
+    document.getElementById('homeBest').textContent = b>0 ? '★ Endless best: '+b : '';
+  },
+  levels(){
+    this.show('levels'); this.buildGrid();
+  },
+  buildGrid(){
+    const g=document.getElementById('lvGrid'); g.innerHTML='';
+    for(let i=0;i<10;i++){
+      const d=document.createElement('div');
+      const isBoss=LEVELS[i].boss;
+      const unlocked = i===0 || Save.data.cleared[i-1];
+      d.className='lv'+(isBoss?' boss':'')+(Save.data.cleared[i]?' cleared':'')+(unlocked?'':' locked');
+      d.innerHTML='<span class="num">'+(i+1)+'</span>'+(isBoss?'<span class="lbl">BOSS</span>':'');
+      if(unlocked) d.onclick=()=>Game.start('level',i);
+      g.appendChild(d);
+    }
+  },
+  toGame(){ this.show(null); document.getElementById('hud').classList.remove('hidden'); },
+  result(win, newBest){
+    document.getElementById('hud').classList.add('hidden');
+    const title=document.getElementById('resultTitle');
+    const stats=document.getElementById('resultStats');
+    const nb=document.getElementById('newBest');
+    const btns=document.getElementById('resultBtns');
+    nb.classList.add('hidden');
+    btns.innerHTML='';
+
+    if(win===null){ // paused
+      title.textContent='PAUSED'; title.className='resultBig win';
+      stats.innerHTML='';
+      addBtn(btns,'RESUME','btn',()=>Game.togglePause());
+      addBtn(btns,'QUIT','btn ghost',()=>UI.home());
+      this.show('result'); return;
+    }
+
+    if(win){
+      const boss=Game.cfg.boss;
+      title.textContent= boss?'BOSS DEFEATED':'LEVEL COMPLETE';
+      title.className='resultBig win';
+      stats.innerHTML='Level <b>'+(Game.levelIdx+1)+'</b> cleared<br>Tiles crossed: <b>'+Game.distance+'</b>';
+      if(newBest){ nb.textContent='★ LEVEL UNLOCKED ★'; nb.classList.remove('hidden'); }
+      if(Game.levelIdx<9 && Save.data.cleared[Game.levelIdx])
+        addBtn(btns,'NEXT ▶','btn',()=>Game.start('level',Game.levelIdx+1));
+      addBtn(btns,'REPLAY','btn ghost',()=>Game.start('level',Game.levelIdx));
+      addBtn(btns,'LEVELS','btn ghost',()=>UI.levels());
+    }else{
+      title.textContent= Game.endless?'GAME OVER':'YOU FELL';
+      title.className='resultBig lose';
+      if(Game.endless){
+        stats.innerHTML='Distance: <b>'+Game.distance+'</b><br>Best: <b>'+Save.data.endlessBest+'</b>';
+        if(newBest){ nb.textContent='★ NEW BEST ★'; nb.classList.remove('hidden'); }
+        addBtn(btns,'RETRY','btn pink',()=>Game.start('endless'));
+        addBtn(btns,'MENU','btn ghost',()=>UI.home());
+      }else{
+        stats.innerHTML='Reached <b>'+Game.distance+'</b> / '+Game.cfg.goal+' tiles';
+        addBtn(btns,'RETRY','btn',()=>Game.start('level',Game.levelIdx));
+        addBtn(btns,'LEVELS','btn ghost',()=>UI.levels());
+      }
+    }
+    this.show('result');
+  }
+};
+function addBtn(parent,label,cls,fn){
+  const b=document.createElement('button'); b.className=cls; b.textContent=label; b.onclick=fn; parent.appendChild(b);
+}
+
+// boot
+UI.home();
+
+// ---- debug harness (only via URL hash, harmless otherwise) ----
+// #shotN  -> start level N and auto-hop along a valid path for screenshots
+if(location.hash==='#levels'){ Save.data.cleared[0]=true; Save.data.cleared[1]=true; UI.levels(); }
+else if(location.hash.startsWith('#shot')){
+  const lv=parseInt(location.hash.replace('#shot',''))||3;
+  Game.start('level', lv-1);
+  let steps=parseInt(new URLSearchParams(location.search).get('steps'))||10;
+  const autop=()=>{
+    if(steps--<=0 || Game.mode!=='play' || Game.anim){ if(Game.mode==='play'&&steps>0) setTimeout(autop,40); return; }
+    // choose a column delta that lands on a solid tile in next row
+    const b=Game.ball; const opts=[0,-1,1].filter(d=>solidAt(Game.field.rows,b.row+1,b.col+d));
+    Game.hop(opts.length?opts[0]:0);
+    setTimeout(autop,180);
+  };
+  setTimeout(autop,300);
+}
+</script>
+</body>
+</html>
