@@ -111,6 +111,19 @@
   .newbest{color:#ffd76a;font-weight:900;letter-spacing:2px;
     text-shadow:0 0 14px rgba(255,200,80,.6);animation:pulse 1s infinite;}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+  #hud .sm{font-size:10px;color:#9d8fc4;font-weight:700;letter-spacing:0;}
+  #hud .ic{font-size:15px;padding:8px 11px;line-height:1;}
+  .hudR{display:flex;gap:8px;pointer-events:none;}
+  #hud .ic{pointer-events:auto;cursor:pointer;}
+  #hudMid{color:#ffd76a;text-shadow:0 0 12px rgba(255,200,80,.55);min-width:64px;text-align:center;}
+  #combo{position:fixed;top:62px;left:0;right:0;text-align:center;z-index:5;pointer-events:none;
+    font-weight:900;font-size:28px;color:#ffd76a;letter-spacing:2px;opacity:0;
+    text-shadow:0 0 16px rgba(255,200,80,.9);transition:opacity .25s;}
+  #combo.bump{animation:cbump .26s ease;}
+  @keyframes cbump{0%{transform:scale(1.6)}60%{transform:scale(.92)}100%{transform:scale(1)}}
+  #shieldHud{position:fixed;top:60px;right:18px;z-index:5;font-size:26px;pointer-events:none;
+    filter:drop-shadow(0 0 8px #00e5ff);animation:pulse 1.4s infinite;}
 </style>
 </head>
 <body>
@@ -119,7 +132,7 @@
 <!-- HOME -->
 <div id="home" class="screen">
   <div class="logo">VOID<br>HOPPER<span class="sub">SWIPE TO LEAP</span></div>
-  <div class="tag">Swipe <b>up · left · right</b> to hop the ball across the tiles. Miss one, fall into the void.</div>
+  <div class="tag">Swipe <b>up · left · right</b> to hop. Grab <b style="color:#ffd76a">coins</b> for combos, snag <b style="color:#9bffd1">gems</b> for a shield — and outrun the rising void.</div>
   <button class="btn" onclick="UI.levels()">PLAY</button>
   <button class="btn pink" onclick="Game.start('endless')">ENDLESS</button>
   <div class="best" id="homeBest"></div>
@@ -144,9 +157,14 @@
 <div id="hud" class="hidden">
   <div class="pill" id="hudLeft">LV 1</div>
   <div class="pill big" id="hudMid">0</div>
-  <div class="pill" id="pauseBtn" onclick="Game.togglePause()">❚❚</div>
+  <div class="hudR">
+    <div class="pill ic" id="muteBtn" onclick="Game.toggleMute()">🔊</div>
+    <div class="pill ic" id="pauseBtn" onclick="Game.togglePause()">❚❚</div>
+  </div>
 </div>
-<div id="hint" class="hidden">swipe ↑ ← → to hop</div>
+<div id="combo"></div>
+<div id="shieldHud" class="hidden">🛡️</div>
+<div id="hint" class="hidden">swipe ↑ ← → · grab coins · outrun the void</div>
 
 <script>
 //=================================================================
@@ -184,16 +202,16 @@ Save.load();
 //  Level configs (1..10). idx 4 & 9 = boss.
 //----------------------------------------------------------------
 const LEVELS = [
-  {goal:25, density:.58, hazSpeed:0,   hazDelay:0,  boss:0},
-  {goal:30, density:.48, hazSpeed:0,   hazDelay:0,  boss:0},
-  {goal:35, density:.42, hazSpeed:.55, hazDelay:3.5,boss:0},
-  {goal:40, density:.35, hazSpeed:.85, hazDelay:3,  boss:0},
-  {goal:35, density:.36, hazSpeed:1.1, hazDelay:2,  boss:1},  // BOSS
-  {goal:45, density:.31, hazSpeed:1.05,hazDelay:2.5,boss:0},
-  {goal:50, density:.27, hazSpeed:1.25,hazDelay:2,  boss:0},
-  {goal:55, density:.24, hazSpeed:1.45,hazDelay:2,  boss:0},
-  {goal:60, density:.21, hazSpeed:1.65,hazDelay:1.5,boss:0},
-  {goal:50, density:.23, hazSpeed:1.9, hazDelay:1.5,boss:2},  // BOSS
+  {goal:25, density:.55, hazSpeed:.55, hazDelay:2.6, boss:0},
+  {goal:28, density:.48, hazSpeed:.72, hazDelay:2.2, boss:0},
+  {goal:32, density:.42, hazSpeed:.88, hazDelay:2.0, boss:0},
+  {goal:36, density:.36, hazSpeed:1.02,hazDelay:1.9, boss:0},
+  {goal:34, density:.38, hazSpeed:1.15,hazDelay:1.8, boss:1},  // BOSS
+  {goal:40, density:.32, hazSpeed:1.18,hazDelay:1.8, boss:0},
+  {goal:44, density:.28, hazSpeed:1.32,hazDelay:1.6, boss:0},
+  {goal:48, density:.25, hazSpeed:1.46,hazDelay:1.6, boss:0},
+  {goal:52, density:.22, hazSpeed:1.62,hazDelay:1.4, boss:0},
+  {goal:46, density:.24, hazSpeed:1.78,hazDelay:1.4, boss:2},  // BOSS
 ];
 
 //----------------------------------------------------------------
@@ -204,6 +222,52 @@ const lerp=(a,b,t)=>a+(b-a)*t;
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const pick=arr=>arr[(Math.random()*arr.length)|0];
 const easeOut=t=>1-Math.pow(1-t,3);
+
+//----------------------------------------------------------------
+//  Sound — synthesized via WebAudio (no files, works offline)
+//----------------------------------------------------------------
+const Sound = {
+  ctx:null, muted:false, master:null,
+  init(){
+    if(this.ctx){ if(this.ctx.state==='suspended') this.ctx.resume(); return; }
+    try{
+      const AC=window.AudioContext||window.webkitAudioContext;
+      this.ctx=new AC();
+      this.master=this.ctx.createGain();
+      this.master.gain.value=0.26;
+      this.master.connect(this.ctx.destination);
+    }catch(e){ this.ctx=null; }
+  },
+  blip(freq,dur,type,vol,slideTo){
+    if(!this.ctx||this.muted) return;
+    const t=this.ctx.currentTime;
+    const o=this.ctx.createOscillator(), g=this.ctx.createGain();
+    o.type=type||'square'; o.frequency.setValueAtTime(freq,t);
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(40,slideTo),t+dur);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(vol||0.3,t+0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t+dur+0.02);
+  },
+  noise(dur,vol,filt){
+    if(!this.ctx||this.muted) return;
+    const t=this.ctx.currentTime, n=Math.floor(this.ctx.sampleRate*dur);
+    const buf=this.ctx.createBuffer(1,n,this.ctx.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+    const src=this.ctx.createBufferSource(); src.buffer=buf;
+    const f=this.ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=filt||800;
+    const g=this.ctx.createGain(); g.gain.value=vol||0.3;
+    src.connect(f); f.connect(g); g.connect(this.master); src.start(t);
+  },
+  hop(){ this.blip(520,0.10,'square',0.16,760); },
+  land(){ this.blip(200,0.08,'sine',0.16,140); },
+  coin(combo){ const b=620+Math.min(combo,14)*60; this.blip(b,0.10,'triangle',0.20,b*1.5); },
+  gem(){ this.blip(680,0.15,'triangle',0.22,1180); setTimeout(()=>this.blip(1080,0.18,'triangle',0.18,1500),60); },
+  shieldHit(){ this.blip(880,0.18,'sawtooth',0.22,280); this.noise(0.18,0.13,1300); },
+  death(){ this.blip(380,0.5,'sawtooth',0.26,55); this.noise(0.4,0.22,500); },
+  boss(){ this.blip(95,0.42,'sawtooth',0.30,50); this.noise(0.35,0.28,360); },
+  win(){ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>this.blip(f,0.20,'triangle',0.22),i*95)); }
+};
 
 //----------------------------------------------------------------
 //  Tile field generator
@@ -245,10 +309,21 @@ function genChunk(field, count){
     field.rows.push(row);
   }
   repair(field.rows, Math.max(0,start-1), field.rows.length-1);
+  // scatter collectibles on solid tiles (after repair so they sit on real tiles)
+  for(let r=Math.max(1,start); r<field.rows.length; r++){
+    for(let c=0;c<COLS;c++){
+      if(!field.rows[r][c]) continue;
+      const k=r+','+c;
+      if(field.items[k]!==undefined) continue;
+      const x=Math.random();
+      if(x<0.035) field.items[k]='gem';
+      else if(x<0.42) field.items[k]='coin';
+    }
+  }
 }
 
 function makeField(cfg, endless){
-  const field = { rows:[], pathCol:2, cfg, endless };
+  const field = { rows:[], pathCol:2, cfg, endless, items:{} };
   genChunk(field, endless ? 60 : cfg.goal+8);
   return field;
 }
@@ -281,15 +356,20 @@ const Game = {
   camRow:0,
   anim:null,            // hop animation {fromC,fromR,toC,toR,t,fall}
   hazardRow:-8, hazardOn:false, time:0,
-  shake:0, removed:new Set(), falling:[],
+  shake:0, removed:new Set(), falling:[], collected:new Set(),
   boss:null, hintShown:false,
   best:0, distance:0,
+  score:0, combo:0, comboTimer:0, mult:1, shield:false,
+  popups:[], trail:[],
 
   start(which, idx){
-    particles=[]; this.falling=[]; this.removed=new Set();
+    particles=[]; this.falling=[]; this.removed=new Set(); this.collected=new Set();
     this.shake=0; this.time=0; this.hazardRow=-8; this.hazardOn=false;
     this.camRow=0; this.anim=null;
     this.ball={col:2,row:0};
+    this.score=0; this.combo=0; this.comboTimer=0; this.mult=1; this.shield=false;
+    this.popups=[]; this.trail=[];
+    this.updateShieldHud(); this.flashCombo();
 
     if(which==='endless'){
       this.endless=true; this.levelIdx=-1;
@@ -325,23 +405,66 @@ const Game = {
     // ensure rows generated ahead
     while(this.field.rows.length < toR+12) genChunk(this.field, 24);
     this.anim={fromC:b.col,fromR:b.row,toC,toR,t:0,fall:false};
+    Sound.hop();
     // hide hint after first move
     const hint=document.getElementById('hint'); hint.style.opacity=0;
   },
 
+  refreshMult(){ this.mult = clamp(1+Math.floor(this.combo/3), 1, 10); },
+  popup(text,x,y,col){ this.popups.push({text,x,y,col,t:0}); },
+
   land(){
     const a=this.anim;
     const onTile = a.toC>=0 && a.toC<COLS && solidAt(this.field.rows,a.toR,a.toC);
-    // crumble the tile we left
+
+    if(!onTile){
+      // shield turns a deadly miss into a bounce-back
+      if(this.shield){
+        this.shield=false; this.updateShieldHud();
+        Sound.shieldHit(); this.shake=Math.max(this.shake,7);
+        burst(colX(a.toC), rowY(a.toR), '#00e5ff', 18, 460);
+        this.popup('SAVED!', colX(a.fromC), rowY(a.fromR)-cell, '#7fe9ff');
+        this.combo=0; this.mult=1; this.flashCombo();
+        this.anim=null;            // stay on the (un-crumbled) tile we left
+        return;
+      }
+      // crumble & fall to your doom
+      this.removed.add(a.fromR+','+a.fromC);
+      this.falling.push({col:a.fromC,row:a.fromR,t:0});
+      this.ball.col=a.toC; this.ball.row=a.toR;
+      this.die('fall'); return;
+    }
+
+    // good landing — crumble the tile we left, advance
     this.removed.add(a.fromR+','+a.fromC);
     this.falling.push({col:a.fromC,row:a.fromR,t:0});
     this.ball.col=a.toC; this.ball.row=a.toR;
-
-    if(!onTile){ this.die('fall'); return; }
-
     this.distance=this.ball.row;
-    burst(colX(a.toC), rowY(a.toR), '#00e5ff', 10, 420);
-    this.shake=Math.min(this.shake+3,6);
+    Sound.land();
+    burst(colX(a.toC), rowY(a.toR), '#00e5ff', 8, 360);
+    this.shake=Math.min(this.shake+2,5);
+    this.score += 1;            // base point per hop
+
+    // collect coin / gem
+    const key=a.toR+','+a.toC, it=this.field.items[key];
+    if(it && !this.collected.has(key)){
+      this.collected.add(key);
+      if(it==='gem'){
+        this.shield=true; this.updateShieldHud();
+        this.combo+=2; this.comboTimer=3.2; this.refreshMult();
+        this.score+=25; Sound.gem();
+        burst(colX(a.toC), rowY(a.toR), '#9bffd1', 22, 520);
+        this.popup('SHIELD +25', colX(a.toC), rowY(a.toR)-cell, '#9bffd1');
+        this.flashCombo();
+      }else{
+        this.combo++; this.comboTimer=3.0; this.refreshMult();
+        const val=5*this.mult; this.score+=val;
+        Sound.coin(this.combo);
+        burst(colX(a.toC), rowY(a.toR), '#ffd76a', 12, 420);
+        this.popup('+'+val, colX(a.toC), rowY(a.toR)-cell*0.8, '#ffd76a');
+        this.flashCombo();
+      }
+    }
     this.updateHud();
 
     if(!this.endless && this.ball.row>=this.cfg.goal){ this.win(); return; }
@@ -350,15 +473,23 @@ const Game = {
 
   die(reason){
     if(this.mode==='dead') return;
+    // shield buys you one escape from the void
+    if(reason==='void' && this.shield){
+      this.shield=false; this.updateShieldHud();
+      this.hazardRow -= 5; Sound.shieldHit(); this.shake=10;
+      this.popup('SHIELD!', colX(this.ball.col), rowY(this.ball.row)-cell, '#7fe9ff');
+      this.combo=0; this.mult=1; this.flashCombo();
+      return;
+    }
     this.mode='dead';
     this.shake=14;
+    Sound.death();
     burst(colX(this.ball.col), rowY(this.ball.row), '#ff2d95', 26, 520);
-    // save endless best
     let nb=false;
     if(this.endless){
-      if(this.distance>Save.data.endlessBest){ Save.data.endlessBest=this.distance; Save.flush(); nb=true; }
+      if(this.score>Save.data.endlessBest){ Save.data.endlessBest=this.score; Save.flush(); nb=true; }
     }else{
-      if(this.distance>Save.data.levelBest[this.levelIdx]){ Save.data.levelBest[this.levelIdx]=this.distance; Save.flush(); }
+      if(this.score>Save.data.levelBest[this.levelIdx]){ Save.data.levelBest[this.levelIdx]=this.score; Save.flush(); }
     }
     if(reason==='fall'){ this.anim.fall=true; this.anim.t=0; }
     setTimeout(()=>UI.result(false,nb), reason==='fall'?720:520);
@@ -369,8 +500,9 @@ const Game = {
     this.anim=null;
     let nb=false;
     if(!Save.data.cleared[this.levelIdx]){ Save.data.cleared[this.levelIdx]=true; nb=true; }
-    if(this.distance>Save.data.levelBest[this.levelIdx]) Save.data.levelBest[this.levelIdx]=this.distance;
+    if(this.score>Save.data.levelBest[this.levelIdx]) Save.data.levelBest[this.levelIdx]=this.score;
     Save.flush();
+    Sound.win();
     burst(colX(this.ball.col), rowY(this.ball.row), '#ffd76a', 40, 560);
     this.shake=8;
     setTimeout(()=>UI.result(true,nb), 700);
@@ -397,9 +529,10 @@ const Game = {
         // SMASH: destroy tiles ahead in those columns, then repair fairness
         const r0=this.ball.row+2, r1=this.ball.row+7;
         for(const c of boss.cols){
-          for(let r=r0;r<=r1;r++){ if(this.field.rows[r]){ this.field.rows[r][c]=false; this.removed.add(r+','+c);} }
+          for(let r=r0;r<=r1;r++){ if(this.field.rows[r]){ this.field.rows[r][c]=false; this.removed.add(r+','+c); delete this.field.items[r+','+c];} }
         }
         repair(this.field.rows, Math.max(0,this.ball.row), r1+1);
+        Sound.boss();
         this.shake=Math.max(this.shake,11);
         for(const c of boss.cols) burst(colX(c), rowY(r0), '#ff2d95', 16, 480);
         boss.phase='idle';
@@ -427,7 +560,24 @@ const Game = {
     const vr = this.anim ? lerp(this.anim.fromR,this.anim.toR,easeOut(Math.min(this.anim.t,1))) : this.ball.row;
     this.camRow += (vr - this.camRow)*Math.min(1,dt*8);
 
+    // ball trail
+    const bx = this.anim ? lerp(colX(this.anim.fromC),colX(this.anim.toC),easeOut(Math.min(this.anim.t,1))) : colX(this.ball.col);
+    const arc = this.anim && !this.anim.fall ? Math.sin(Math.PI*Math.min(this.anim.t,1))*cell*0.75 : 0;
+    this.trail.push({x:bx, y:rowY(vr)-cell*0.30-arc, t:0});
+    if(this.trail.length>10) this.trail.shift();
+    for(const tp of this.trail) tp.t+=dt;
+
+    // floating score popups
+    for(const p of this.popups){ p.t+=dt; p.y-=34*dt; }
+    this.popups=this.popups.filter(p=>p.t<1.1);
+
     if(this.mode!=='play') return;
+
+    // combo decays if you go too long without a coin
+    if(this.comboTimer>0){
+      this.comboTimer-=dt;
+      if(this.comboTimer<=0 && this.combo>0){ this.combo=0; this.mult=1; this.flashCombo(); }
+    }
 
     // hazard (the rising void)
     if(this.cfg.hazSpeed>0){
@@ -447,13 +597,30 @@ const Game = {
   updateHud(){
     const left=document.getElementById('hudLeft');
     const mid=document.getElementById('hudMid');
+    mid.textContent=this.score;
     if(this.endless){
-      left.textContent='ENDLESS';
-      mid.textContent=this.distance;
+      left.innerHTML='ENDLESS<br><span class="sm">'+this.distance+'m</span>';
     }else{
-      left.innerHTML = (this.cfg.boss?'👑 ':'')+'LV '+(this.levelIdx+1);
-      mid.textContent=this.distance+' / '+this.cfg.goal;
+      left.innerHTML=(this.cfg.boss?'👑 ':'')+'LV '+(this.levelIdx+1)+'<br><span class="sm">'+this.distance+' / '+this.cfg.goal+'</span>';
     }
+  },
+
+  flashCombo(){
+    const el=document.getElementById('combo');
+    if(this.combo>0 && this.mult>1){
+      el.textContent='×'+this.mult+(this.mult>=5?' 🔥':'');
+      el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+      el.style.opacity=1;
+    }else el.style.opacity=0;
+  },
+
+  updateShieldHud(){
+    document.getElementById('shieldHud').classList.toggle('hidden', !this.shield);
+  },
+
+  toggleMute(){
+    Sound.init(); Sound.muted=!Sound.muted;
+    document.getElementById('muteBtn').textContent = Sound.muted?'🔇':'🔊';
   }
 };
 
@@ -525,6 +692,59 @@ function drawBall(){
   ctx.fillStyle=g;
   ctx.beginPath(); ctx.ellipse(x,y,rad,rad*scaleY,0,0,7); ctx.fill();
   ctx.restore();
+  // shield ring
+  if(Game.shield && (!a || !a.fall)){
+    ctx.save();
+    ctx.globalAlpha=0.55+0.3*Math.sin(Game.time*7);
+    ctx.strokeStyle='#00e5ff'; ctx.lineWidth=3;
+    ctx.shadowColor='#00e5ff'; ctx.shadowBlur=12;
+    ctx.beginPath(); ctx.arc(x,y,rad*1.55,0,7); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawTrail(){
+  for(const tp of Game.trail){
+    const a=Math.max(0,1-tp.t*3.2)*0.4;
+    if(a<=0) continue;
+    ctx.save(); ctx.globalAlpha=a; ctx.fillStyle='#bfefff';
+    ctx.beginPath(); ctx.arc(tp.x,tp.y,cell*0.17,0,7); ctx.fill(); ctx.restore();
+  }
+}
+
+function drawItems(){
+  const f=Game.field; if(!f||!f.items) return;
+  const top=Math.ceil(Game.camRow + H/cell + 2);
+  const bot=Math.max(0,Math.floor(Game.camRow-2));
+  for(let r=bot;r<=top;r++){
+    for(let c=0;c<COLS;c++){
+      const key=r+','+c, it=f.items[key];
+      if(!it) continue;
+      if(Game.collected.has(key)||Game.removed.has(key)) continue;
+      const bob=Math.sin(Game.time*4+r*0.7+c)*3;
+      const x=colX(c), y=rowY(r)-cell*0.30+bob;
+      ctx.save();
+      if(it==='gem'){
+        ctx.shadowColor='#9bffd1'; ctx.shadowBlur=16;
+        ctx.translate(x,y); ctx.rotate(Game.time*2.2);
+        const s=cell*0.17;
+        const gg=ctx.createLinearGradient(-s,-s,s,s);
+        gg.addColorStop(0,'#e6fff4'); gg.addColorStop(1,'#37e0a0');
+        ctx.fillStyle=gg;
+        ctx.beginPath(); ctx.moveTo(0,-s);ctx.lineTo(s,0);ctx.lineTo(0,s);ctx.lineTo(-s,0);ctx.closePath(); ctx.fill();
+      }else{
+        ctx.shadowColor='#ffd76a'; ctx.shadowBlur=13;
+        const r1=cell*0.15;
+        const cg=ctx.createLinearGradient(x-r1,y-r1,x+r1,y+r1);
+        cg.addColorStop(0,'#fff2b0'); cg.addColorStop(1,'#f0a93a');
+        ctx.fillStyle=cg;
+        ctx.beginPath(); ctx.ellipse(x,y,r1*0.66,r1,0,0,7); ctx.fill();
+        ctx.strokeStyle='rgba(255,255,255,.6)'; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.ellipse(x,y,r1*0.66,r1,0,0,7); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
 }
 
 function drawBoss(){
@@ -595,13 +815,24 @@ function render(){
     ctx.restore();
   }
 
+  drawItems();
   drawBoss();
+  drawTrail();
   drawBall();
 
   // particles
   for(const p of particles){
     ctx.save(); ctx.globalAlpha=Math.max(0,p.life);
     ctx.fillStyle=p.col; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill(); ctx.restore();
+  }
+
+  // floating score popups
+  for(const p of Game.popups){
+    ctx.save(); ctx.globalAlpha=Math.max(0,1-p.t/1.1);
+    ctx.fillStyle=p.col; ctx.textAlign='center';
+    ctx.font='900 '+Math.floor(cell*0.30)+'px "Trebuchet MS",sans-serif';
+    ctx.shadowColor=p.col; ctx.shadowBlur=10;
+    ctx.fillText(p.text,p.x,p.y); ctx.restore();
   }
 
   // hazard void
@@ -642,6 +873,7 @@ requestAnimationFrame(loop);
 //----------------------------------------------------------------
 let touchStart=null;
 canvas.addEventListener('touchstart',e=>{
+  Sound.init();
   const t=e.changedTouches[0]; touchStart={x:t.clientX,y:t.clientY};
 },{passive:false});
 canvas.addEventListener('touchmove',e=>{e.preventDefault();},{passive:false});
@@ -653,7 +885,7 @@ canvas.addEventListener('touchend',e=>{
 },{passive:false});
 // mouse for desktop testing
 let mouseStart=null;
-canvas.addEventListener('mousedown',e=>{mouseStart={x:e.clientX,y:e.clientY};});
+canvas.addEventListener('mousedown',e=>{Sound.init();mouseStart={x:e.clientX,y:e.clientY};});
 canvas.addEventListener('mouseup',e=>{ if(mouseStart){handleSwipe(e.clientX-mouseStart.x,e.clientY-mouseStart.y);mouseStart=null;} });
 
 function handleSwipe(dx,dy){
@@ -665,6 +897,7 @@ function handleSwipe(dx,dy){
 }
 window.addEventListener('keydown',e=>{
   if(Game.mode==='play'){
+    Sound.init();
     if(e.key==='ArrowUp'||e.key===' '){e.preventDefault();Game.hop(0);}
     else if(e.key==='ArrowLeft')Game.hop(-1);
     else if(e.key==='ArrowRight')Game.hop(1);
@@ -678,11 +911,12 @@ window.addEventListener('keydown',e=>{
 const UI = {
   show(id){ for(const s of ['home','levels','result']) document.getElementById(s).classList.add('hidden');
     if(id) document.getElementById(id).classList.remove('hidden'); },
-  hideHud(){ document.getElementById('hud').classList.add('hidden'); document.getElementById('hint').classList.add('hidden'); },
+  hideHud(){ document.getElementById('hud').classList.add('hidden'); document.getElementById('hint').classList.add('hidden');
+    document.getElementById('combo').style.opacity=0; document.getElementById('shieldHud').classList.add('hidden'); },
   home(){
     Game.mode='menu'; this.hideHud(); this.show('home');
     const b=Save.data.endlessBest;
-    document.getElementById('homeBest').textContent = b>0 ? '★ Endless best: '+b : '';
+    document.getElementById('homeBest').textContent = b>0 ? '★ Best score: '+b : '';
   },
   levels(){
     this.show('levels'); this.buildGrid();
@@ -702,6 +936,8 @@ const UI = {
   toGame(){ this.show(null); document.getElementById('hud').classList.remove('hidden'); },
   result(win, newBest){
     document.getElementById('hud').classList.add('hidden');
+    document.getElementById('combo').style.opacity=0;
+    document.getElementById('shieldHud').classList.add('hidden');
     const title=document.getElementById('resultTitle');
     const stats=document.getElementById('resultStats');
     const nb=document.getElementById('newBest');
@@ -719,10 +955,10 @@ const UI = {
 
     if(win){
       const boss=Game.cfg.boss;
-      title.textContent= boss?'BOSS DEFEATED':'LEVEL COMPLETE';
+      title.textContent= boss?'BOSS DEFEATED':'LEVEL CLEAR';
       title.className='resultBig win';
-      stats.innerHTML='Level <b>'+(Game.levelIdx+1)+'</b> cleared<br>Tiles crossed: <b>'+Game.distance+'</b>';
-      if(newBest){ nb.textContent='★ LEVEL UNLOCKED ★'; nb.classList.remove('hidden'); }
+      stats.innerHTML='Score <b>'+Game.score+'</b><br>Best <b>'+Save.data.levelBest[Game.levelIdx]+'</b>';
+      if(newBest){ nb.textContent='★ NEXT LEVEL UNLOCKED ★'; nb.classList.remove('hidden'); }
       if(Game.levelIdx<9 && Save.data.cleared[Game.levelIdx])
         addBtn(btns,'NEXT ▶','btn',()=>Game.start('level',Game.levelIdx+1));
       addBtn(btns,'REPLAY','btn ghost',()=>Game.start('level',Game.levelIdx));
@@ -730,13 +966,14 @@ const UI = {
     }else{
       title.textContent= Game.endless?'GAME OVER':'YOU FELL';
       title.className='resultBig lose';
+      const best = Game.endless?Save.data.endlessBest:Save.data.levelBest[Game.levelIdx];
+      stats.innerHTML='Score <b>'+Game.score+'</b><br>Best <b>'+best+'</b>'+
+        (Game.endless?'<br><span style="font-size:13px">Distance '+Game.distance+'m</span>':'<br><span style="font-size:13px">Reached '+Game.distance+' / '+Game.cfg.goal+'</span>');
+      if(newBest){ nb.textContent='★ NEW BEST ★'; nb.classList.remove('hidden'); }
       if(Game.endless){
-        stats.innerHTML='Distance: <b>'+Game.distance+'</b><br>Best: <b>'+Save.data.endlessBest+'</b>';
-        if(newBest){ nb.textContent='★ NEW BEST ★'; nb.classList.remove('hidden'); }
         addBtn(btns,'RETRY','btn pink',()=>Game.start('endless'));
         addBtn(btns,'MENU','btn ghost',()=>UI.home());
       }else{
-        stats.innerHTML='Reached <b>'+Game.distance+'</b> / '+Game.cfg.goal+' tiles';
         addBtn(btns,'RETRY','btn',()=>Game.start('level',Game.levelIdx));
         addBtn(btns,'LEVELS','btn ghost',()=>UI.levels());
       }
